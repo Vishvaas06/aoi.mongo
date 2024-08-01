@@ -17,7 +17,11 @@ class Database {
           strict: true,
           deprecationErrors: false
         },
-        connectTimeoutMS: 15000
+		writeConcern: {
+            w: 'majority',
+            j: true,
+        },
+        connectTimeoutMS: 60000
       });
 
       if (!this.options.tables || this.options?.tables.length === 0) throw new TypeError("Missing variable tables, please provide at least one table.");
