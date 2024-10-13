@@ -53,14 +53,11 @@ class Database {
           );
         }
       }
-
-      console.log('Creating cache tables and saving data');
-      let start = Date.now();
+      
       for (const table of this.client.db.tables) {
         await this.client.cacheManager.createCache("Group", `c_${table}`);
-        await this.loadCacheFromDB(table);
       }
-      console.log('Datas successfully saved, Took: ', Date.now() - start);
+      console.log('Create all cache tables');
     } catch (err) {
       AoiError.createConsoleMessage(
         [
@@ -83,16 +80,16 @@ class Database {
     }
   }
 
-  async loadCacheFromDB(table) {
+  async load(table) {
     const db = this.client.db.db(table);
     const collections = await db.listCollections().toArray();
-  
+
     for (const collection of collections) {
       const col = db.collection(collection.name);
       const data = await col.find({}).toArray();
-  
+
       const cacheName = `c_${table}`;
-  
+
       for (const item of data) {
         await this.client.cacheManager.caches["Group"][cacheName].set(item.key, item.value);
       }
@@ -110,30 +107,50 @@ class Database {
     const cacheKey = `${key}_${id}`;
     const cacheName = `c_${table}`;
     const aoijs_vars = ["cooldown", "setTimeout", "ticketChannel"];
-
+    const cache = this.client.cacheManager.caches["Group"][cacheName];
+  
     if (this.debug) {
       console.log(`[received] get(${table}, ${key}, ${id})`);
     }
-
+  
+    let cachedValue = await cache.get(cacheKey);
     let data;
-
-    if (aoijs_vars.includes(key)) {
-      data = await this.client.db.db(table).collection(key).findOne({ key: cacheKey });
-    } else {
-      if (!this.client.variableManager.has(key, table)) return;
-      const __var = this.client.variableManager.get(key, table)?.default;
-      const value = await this.client.cacheManager.caches["Group"][cacheName].get(cacheKey) ?? __var;
-      data = { key: cacheKey, value: value }
+  
+    if (cachedValue !== undefined) {
+      data = { key: cacheKey, value: cachedValue };
       if (this.debug) {
-        if (data === __var) {
-          console.log(`[returning] get(${table}, ${key}, ${id}) -> default value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
+        console.log(`[returning] get(${table}, ${key}, ${id}) -> cache value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
+      }
+    } else {
+      if (aoijs_vars.includes(key)) {
+        data = await this.client.db.db(table).collection(key).findOne({ key: cacheKey });
+        if (data) {
+          await cache.set(cacheKey, data.value);
+          data = { key: cacheKey, value: data.value };
         } else {
-          console.log(`[returning] get(${table}, ${key}, ${id}) -> cache value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
+          data = { key: cacheKey, value: null };
+        }
+      } else {
+        if (!this.client.variableManager.has(key, table)) return;
+        
+        data = await this.client.db.db(table).collection(key).findOne({ key: cacheKey });
+        if (data) {
+          await cache.set(cacheKey, data.value);
+          data = { key: cacheKey, value: data.value };
+        } else {
+          const __var = this.client.variableManager.get(key, table)?.default;
+          data = { key: cacheKey, value: __var };
+          await cache.set(cacheKey, __var);
         }
       }
+  
+      if (this.debug) {
+        console.log(`[returning] get(${table}, ${key}, ${id}) -> fetched value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
+      }
     }
+  
     return data;
-  }
+  }  
 
 
   async set(table, key, id, value) {
@@ -157,6 +174,9 @@ class Database {
   }
 
   async drop(table, variable) {
+    const cacheName = `c_${table}`;
+    const cache = this.client.cacheManager.caches["Group"][cacheName];
+
     if (this.debug) {
       console.log(`[received] drop(${table}, ${variable})`);
     }
@@ -166,7 +186,9 @@ class Database {
       await this.client.db.db(table).dropDatabase();
     }
 
-    delete this.client.cacheManager.caches("Group", `c_${table}`);
+    for (const key of cache.keys()) {
+      cache.delete(key);
+    }
 
     if (this.debug) {
       console.log(`[returning] drop(${table}, ${variable}) -> dropped ${table}`);
