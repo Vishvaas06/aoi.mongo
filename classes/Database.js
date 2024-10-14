@@ -1,8 +1,11 @@
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const AoiError = require("aoi.js/src/classes/AoiError");
 
-class Database {
+const EventEmitter = require("events");
+class Database extends EventEmitter {
   constructor(client, options) {
+    super();
+
     this.client = client;
     this.options = options;
     this.debug = this.options.debug ?? false;
@@ -35,6 +38,7 @@ class Database {
       this.client.db.all = this.all.bind(this);
       this.client.db.db.transfer = this.transfer.bind(this);
       this.client.db.db.avgPing = this.ping.bind(this);
+      this.client.db.db.readyAt = Date.now();
 
       await this.client.db.connect();
 
@@ -58,6 +62,7 @@ class Database {
         await this.client.cacheManager.createCache("Group", `c_${table}`);
       }
       console.log('Create all cache tables');
+      this.emit("ready", { client: this.client });
     } catch (err) {
       AoiError.createConsoleMessage(
         [
@@ -71,12 +76,9 @@ class Database {
     }
 
     if (this.options?.convertOldData?.enabled === true) {
-      await new Promise((resolve) => {
-        this.client.once("ready", () => {
-          setTimeout(resolve, 5000);
-        });
+      this.client.once("ready", () => {
+        require("./backup")(this.client, this.options);
       });
-      require("./backup")(this.client, this.options);
     }
   }
 
@@ -104,7 +106,8 @@ class Database {
   }
 
   async get(table, key, id = undefined) {
-    const cacheKey = `${key}_${id}`;
+    let cacheKey = key;
+    if (id) cacheKey = `${key}_${id}`;
     const cacheName = `c_${table}`;
     const aoijs_vars = ["cooldown", "setTimeout", "ticketChannel"];
     const cache = this.client.cacheManager.caches["Group"][cacheName];
@@ -145,7 +148,7 @@ class Database {
       }
   
       if (this.debug) {
-        console.log(`[returning] get(${table}, ${key}, ${id}) -> fetched value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
+        console.log(`[returning] get(${table}, ${key}) -> fetched value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
       }
     }
   
@@ -154,12 +157,12 @@ class Database {
 
 
   async set(table, key, id, value) {
+    let cacheKey = key;
+    if (id) cacheKey = `${key}_${id}`;
+
     if (this.debug) {
       console.log(`[received] set(${table}, ${key}, ${id}, ${typeof value === "object" ? JSON.stringify(value) : value})`);
     }
-
-    const cacheKey = `${key}_${id}`;
-    const cacheName = `c_${table}`;
 
     await this.client.cacheManager.caches["Group"][cacheName][
       this.client.cacheManager.caches["Group"][cacheName].set ? "set" : "add"
@@ -169,7 +172,7 @@ class Database {
     await col.updateOne({ key: cacheKey }, { $set: { value: value } }, { upsert: true });
 
     if (this.debug) {
-      console.log(`[returning] set(${table}, ${key}, ${id}, ${value}) -> ${typeof value === "object" ? JSON.stringify(value) : value}`);
+      console.log(`[returning] set(${table}, ${key}, ${value}) -> ${typeof value === "object" ? JSON.stringify(value) : value}`);
     }
   }
 
@@ -197,6 +200,11 @@ class Database {
 
   async deleteMany(table, query) {
     const cacheName = `c_${table}`;
+
+    if (this.debug == true) {
+      console.debug(`[received] deleteMany(${table}, ${query})`);
+    }
+
     const cache = this.client.cacheManager.caches["Group"][cacheName];
 
     const keysToDelete = [];
@@ -213,6 +221,10 @@ class Database {
       }
     }
 
+    if (this.debug == true) {
+      const data = await col.find(query).toArray();
+      console.debug(`[returning] deleteMany(${table}, ${query}) -> ${data}`);
+    }
     for (const key of keysToDelete) {
       cache.delete(key);
     }
@@ -224,37 +236,41 @@ class Database {
       const col = db.collection(collection.name);
       await col.deleteMany(query);
     }
+
+    if (this.debug == true) {
+      console.debug(`[returning] deleteMany(${table}, ${query}) -> deleted`);
+    }
   }
 
   async delete(table, key, id) {
+    let dbkey = key;
+    if (id) dbkey = `${key}_${id}`;
+    const cacheName = `c_${table}`;
+
     if (this.debug) {
       console.log(`[received] delete(${table}, ${key}, ${id})`);
     }
     const db = this.client.db.db(table);
     const collections = await db.listCollections().toArray();
-    const dbkey = `${key}_${id}`;
-    const cacheName = `c_${table}`;
-
 
     for (let collection of collections) {
       const col = db.collection(collection.name);
       const doc = await col.findOne({ key: dbkey });
 
-      if (doc) {
-        await col.deleteOne({ key: dbkey });
-
-        const cache = this.client.cacheManager.caches["Group"][cacheName];
-        cache.delete(dbkey);
-
-        if ((await col.countDocuments({})) === 0) await col.drop(collection.name);
+      if (!doc) continue;
 
         if (this.debug) {
-          console.log(`[returning] delete(${table}, ${key}, ${id}) -> ${doc.value}`);
+        console.log(`[returning] delete(${table}, ${key}) -> ${doc.value}`);
         }
 
+        await col.deleteOne({ key: dbkey });
+        this.client.cacheManager.caches["Group"][cacheName].delete(dbkey);
+
         break;
-      }
     }
+      if (this.debug == true) {
+        console.debug(`[returned] delete(${table}, ${key}) -> deleted`);
+      }
   }
 
   async findOne(table, query) {
