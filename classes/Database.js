@@ -159,6 +159,7 @@ class Database extends EventEmitter {
   async set(table, key, id, value) {
     let cacheKey = key;
     if (id) cacheKey = `${key}_${id}`;
+    const cacheName = `c_${table}`;
 
     if (this.debug) {
       console.log(`[received] set(${table}, ${key}, ${id}, ${typeof value === "object" ? JSON.stringify(value) : value})`);
