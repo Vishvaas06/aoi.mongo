@@ -139,20 +139,14 @@ class Database extends EventEmitter {
         data = await this.client.db.db(table).collection(key).findOne({ key: cacheKey });
         if (data) {
           await cache.set(cacheKey, data.value);
-          data = { key: cacheKey, value: data.value };
-        } else {
-          data = null;
         }
       } else {
         if (!this.client.variableManager.has(key, table)) return;
-        
         data = await this.client.db.db(table).collection(key).findOne({ key: cacheKey });
         if (data) {
           await cache.set(cacheKey, data.value);
-          data = { key: cacheKey, value: data.value };
         } else {
           const __var = this.client.variableManager.get(key, table)?.default;
-          data = { key: cacheKey, value: __var };
           await cache.set(cacheKey, __var);
         }
       }
@@ -211,44 +205,32 @@ class Database extends EventEmitter {
 
   async deleteMany(table, query) {
     const cacheName = `c_${table}`;
-
-    if (this.debug == true) {
+    if (this.debug) {
       console.debug(`[received] deleteMany(${table}, ${query})`);
     }
 
     const cache = this.client.cacheManager.caches["Group"][cacheName];
-
-    const keysToDelete = [];
-
-    for (const [key] of cache.cache) {
-      const cacheKey = key.split("_")[0];
-      if (this.client.variableManager.has(cacheKey, table)) {
-        const __var = this.client.variableManager.get(cacheKey, table)?.default;
-        if (__var === undefined) continue;
-
+    if (cache) {
+      for (const key of cache.keys()) {
+        const cacheKey = key.split("_")[0];
         if (query && query(cacheKey)) {
-          keysToDelete.push(key);
+          cache.delete(key);
         }
       }
     }
-
-    if (this.debug == true) {
-      const data = await col.find(query).toArray();
-      console.debug(`[returning] deleteMany(${table}, ${query}) -> ${data}`);
-    }
-    for (const key of keysToDelete) {
-      cache.delete(key);
-    }
-
+  
     const db = this.client.db.db(table);
     const collections = await db.listCollections().toArray();
-
     for (let collection of collections) {
       const col = db.collection(collection.name);
-      await col.deleteMany(query);
+      if (this.debug) {
+        const data = await col.find({ q: query }).toArray();
+        console.debug(`[returning] deleteMany(${table}, ${query}) -> ${data}`);
+      }
+      await col.deleteMany({ q: query });
     }
-
-    if (this.debug == true) {
+  
+    if (this.debug) {
       console.debug(`[returning] deleteMany(${table}, ${query}) -> deleted`);
     }
   }
