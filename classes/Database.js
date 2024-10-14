@@ -131,7 +131,7 @@ class Database extends EventEmitter {
           await cache.set(cacheKey, data.value);
           data = { key: cacheKey, value: data.value };
         } else {
-          data = { key: cacheKey, value: null };
+          data = null;
         }
       } else {
         if (!this.client.variableManager.has(key, table)) return;
