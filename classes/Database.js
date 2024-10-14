@@ -1,6 +1,6 @@
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const AoiError = require("aoi.js/src/classes/AoiError");
-
+const Interpreter = require("aoi.js/src/core/interpreter.js");
 const EventEmitter = require("events");
 class Database extends EventEmitter {
   constructor(client, options) {
@@ -62,6 +62,16 @@ class Database extends EventEmitter {
         await this.client.cacheManager.createCache("Group", `c_${table}`);
       }
       console.log('Create all cache tables');
+      const client = this.client;
+
+      this.client.once("ready", async () => {
+        await require("aoi.js/src/events/Custom/timeout.js")({ client, interpreter: Interpreter }, undefined, undefined, true);
+
+        setInterval(async () => {
+          await require("aoi.js/src/events/Custom/handleResidueData.js")(client);
+        }, 3.6e6);
+      });
+
       this.emit("ready", { client: this.client });
     } catch (err) {
       AoiError.createConsoleMessage(
