@@ -113,7 +113,7 @@ class Database extends EventEmitter {
     const cache = this.client.cacheManager.caches["Group"][cacheName];
   
     if (this.debug) {
-      console.log(`[received] get(${table}, ${key}, ${id})`);
+      console.log(`[received] get(${table}, ${key})`);
     }
   
     let cachedValue = await cache.get(cacheKey);
@@ -122,7 +122,7 @@ class Database extends EventEmitter {
     if (cachedValue !== undefined) {
       data = { key: cacheKey, value: cachedValue };
       if (this.debug) {
-        console.log(`[returning] get(${table}, ${key}, ${id}) -> cache value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
+        console.log(`[returning] get(${table}, ${key}) -> cache value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
       }
     } else {
       if (aoijs_vars.includes(key)) {
@@ -162,7 +162,7 @@ class Database extends EventEmitter {
     const cacheName = `c_${table}`;
 
     if (this.debug) {
-      console.log(`[received] set(${table}, ${key}, ${id}, ${typeof value === "object" ? JSON.stringify(value) : value})`);
+      console.log(`[received] set(${table}, ${key}, ${typeof value === "object" ? JSON.stringify(value) : value})`);
     }
 
     await this.client.cacheManager.caches["Group"][cacheName][
@@ -249,7 +249,7 @@ class Database extends EventEmitter {
     const cacheName = `c_${table}`;
 
     if (this.debug) {
-      console.log(`[received] delete(${table}, ${key}, ${id})`);
+      console.log(`[received] delete(${table}, ${key})`);
     }
     const db = this.client.db.db(table);
     const collections = await db.listCollections().toArray();
