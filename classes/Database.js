@@ -57,7 +57,7 @@ class Database extends EventEmitter {
           );
         }
       }
-      
+
       for (const table of this.client.db.tables) {
         await this.client.cacheManager.createCache("Group", `c_${table}`);
       }
@@ -119,27 +119,24 @@ class Database extends EventEmitter {
     let cacheKey = key;
     if (id) cacheKey = `${key}_${id}`;
     const cacheName = `c_${table}`;
-    const aoijs_vars = ["cooldown", "setTimeout", "ticketChannel"];
+    const aoijs_vars = ["setTimeout", "ticketChannel"];
     const cache = this.client.cacheManager.caches["Group"][cacheName];
-  
+
     if (this.debug) {
       console.log(`[received] get(${table}, ${key})`);
     }
-  
+
     let cachedValue = await cache.get(cacheKey);
     let data;
-  
+
     if (cachedValue !== undefined) {
       data = { key: cacheKey, value: cachedValue };
       if (this.debug) {
-        console.log(`[returning] get(${table}, ${key}) -> cache value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
+        console.log(`[returned] get(${table}, ${key}) -> cache value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
       }
     } else {
       if (aoijs_vars.includes(key)) {
         data = await this.client.db.db(table).collection(key).findOne({ key: cacheKey });
-        if (data) {
-          await cache.set(cacheKey, data.value);
-        }
       } else {
         if (!this.client.variableManager.has(key, table)) return;
         data = await this.client.db.db(table).collection(key).findOne({ key: cacheKey });
@@ -150,17 +147,18 @@ class Database extends EventEmitter {
           await cache.set(cacheKey, __var);
         }
       }
-  
+
       if (this.debug) {
-        console.log(`[returning] get(${table}, ${key}) -> fetched value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
+        console.log(`[returned] get(${table}, ${key}) -> fetched value: ${typeof data === "object" ? JSON.stringify(data) : data}`);
       }
     }
-  
+
     return data;
-  }  
+  }
 
 
   async set(table, key, id, value) {
+    const aoijs_vars = ["setTimeout", "ticketChannel"];
     let cacheKey = key;
     if (id) cacheKey = `${key}_${id}`;
     const cacheName = `c_${table}`;
@@ -169,15 +167,17 @@ class Database extends EventEmitter {
       console.log(`[received] set(${table}, ${key}, ${typeof value === "object" ? JSON.stringify(value) : value})`);
     }
 
-    await this.client.cacheManager.caches["Group"][cacheName][
-      this.client.cacheManager.caches["Group"][cacheName].set ? "set" : "add"
-    ](cacheKey, value);
+    if (!aoijs_vars.includes(key)) {
+      await this.client.cacheManager.caches["Group"][cacheName][
+        this.client.cacheManager.caches["Group"][cacheName].set ? "set" : "add"
+      ](cacheKey, value);
+    }
 
     const col = this.client.db.db(table).collection(key);
     await col.updateOne({ key: cacheKey }, { $set: { value: value } }, { upsert: true });
 
     if (this.debug) {
-      console.log(`[returning] set(${table}, ${key}, ${value}) -> ${typeof value === "object" ? JSON.stringify(value) : value}`);
+      console.log(`[returned] set(${table}, ${key}, ${value}) -> ${typeof value === "object" ? JSON.stringify(value) : value}`);
     }
   }
 
@@ -197,10 +197,6 @@ class Database extends EventEmitter {
     for (const key of cache.keys()) {
       cache.delete(key);
     }
-
-    if (this.debug) {
-      console.log(`[returning] drop(${table}, ${variable}) -> dropped ${table}`);
-    }
   }
 
   async deleteMany(table, query) {
@@ -218,20 +214,21 @@ class Database extends EventEmitter {
         }
       }
     }
-  
+
     const db = this.client.db.db(table);
     const collections = await db.listCollections().toArray();
     for (let collection of collections) {
       const col = db.collection(collection.name);
-      if (this.debug) {
-        const data = await col.find({ q: query }).toArray();
-        console.debug(`[returning] deleteMany(${table}, ${query}) -> ${data}`);
+      const docsToDelete = await col.find({}).toArray();
+      const filteredDocs = docsToDelete.filter(doc => query(doc));
+
+      if (filteredDocs.length > 0) {
+        await col.deleteMany({ _id: { $in: filteredDocs.map(doc => doc._id) } });
       }
-      await col.deleteMany({ q: query });
     }
-  
+
     if (this.debug) {
-      console.debug(`[returning] deleteMany(${table}, ${query}) -> deleted`);
+      console.debug(`[returned] deleteMany(${table}, ${query}) -> deleted`);
     }
   }
 
@@ -252,18 +249,14 @@ class Database extends EventEmitter {
 
       if (!doc) continue;
 
-        if (this.debug) {
-        console.log(`[returning] delete(${table}, ${key}) -> ${doc.value}`);
-        }
+      await col.deleteOne({ key: dbkey });
+      this.client.cacheManager.caches["Group"][cacheName].delete(dbkey);
 
-        await col.deleteOne({ key: dbkey });
-        this.client.cacheManager.caches["Group"][cacheName].delete(dbkey);
-
-        break;
+      break;
     }
-      if (this.debug == true) {
-        console.debug(`[returned] delete(${table}, ${key}) -> deleted`);
-      }
+    if (this.debug == true) {
+      console.debug(`[returned] delete(${table}, ${key}) -> deleted`);
+    }
   }
 
   async findOne(table, query) {
@@ -317,7 +310,7 @@ class Database extends EventEmitter {
       results.sort((a, b) => b.value - a.value);
     }
     if (this.debug == true) {
-      console.log(`[returning] all(${table}, ${filter}, ${list}, ${sort}) -> ${JSON.stringify(results)} items`);
+      console.log(`[returned] all(${table}, ${filter}, ${list}, ${sort}) -> ${JSON.stringify(results)} items`);
     }
     return results.slice(0, list);
   }
