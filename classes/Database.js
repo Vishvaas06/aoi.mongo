@@ -119,7 +119,7 @@ class Database extends EventEmitter {
     let cacheKey = key;
     if (id) cacheKey = `${key}_${id}`;
     const cacheName = `c_${table}`;
-    const aoijs_vars = ["setTimeout", "ticketChannel"];
+    const aoijs_vars = ["cooldown", "setTimeout", "ticketChannel"];
     const cache = this.client.cacheManager.caches["Group"][cacheName];
 
     if (this.debug) {
