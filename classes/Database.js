@@ -201,14 +201,14 @@ class Database extends EventEmitter {
 
         if (this.client.shard) {
             await this.client.shard.broadcastEval((client, context) => {
-                const [table, query] = context;
+                const [cacheName, query] = context;
                 const cache = client.cacheManager.caches["Group"][cacheName];
                 if (cache) {
                     for (const key of cache.keys()) {
                         if (query(key.split("_")[0])) cache.delete(key);
                     }
                 }
-            }, { context: [table, query] });
+            }, { context: [cacheName, query] });
         } else {
             for (const key of cache.keys()) {
                 if (query(key.split("_")[0])) cache.delete(key);
