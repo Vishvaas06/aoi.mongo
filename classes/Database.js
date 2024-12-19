@@ -187,29 +187,34 @@ class Database extends EventEmitter {
 
     async deleteMany(table, query) {
         const cacheName = `c_${table}`;
-        const cache = this.client.cacheManager.caches["Group"][cacheName];
-        const db = this.client.db.db(table);
 
         if (this.debug) console.debug(`[received] deleteMany(${table}, ${query})`);
 
+        const db = this.client.db.db(table);
         const collections = await db.listCollections().toArray();
-        for (const { name } of collections) {
-            const col = db.collection(name);
-            const docs = await col.find(query ? { $query: query } : {}).toArray();
-            if (docs.length) await col.deleteMany({ _id: { $in: docs.map(doc => doc._id) } });
+
+        for (let collection of collections) {
+            const col = db.collection(collection.name);
+            if (this.debug == true) {
+                const data = await col.find({ q: query }).toArray();
+                console.debug(`[returning] deleteMany(${table}, ${query}) -> ${data}`);
+            }
+
+            await col.deleteMany({ q: query });
         }
 
         if (this.client.shard) {
             await this.client.shard.broadcastEval((client, context) => {
-                const [cacheName, query] = context;
-                const cache = client.cacheManager.caches["Group"][cacheName];
+                const [table, query] = context;
+                const cache = client.cacheManager.caches["Group"][`c_${table}`];
                 if (cache) {
                     for (const key of cache.keys()) {
                         if (query(key.split("_")[0])) cache.delete(key);
                     }
                 }
-            }, { context: [cacheName, query] });
+            }, { context: [table, query] });
         } else {
+            const cache = client.cacheManager.caches["Group"][`c_${table}`];
             for (const key of cache.keys()) {
                 if (query(key.split("_")[0])) cache.delete(key);
             }
