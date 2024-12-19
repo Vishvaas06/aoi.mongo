@@ -65,12 +65,22 @@ class Database extends EventEmitter {
             const client = this.client;
 
             this.client.once("ready", async () => {
-                await require("aoi.js/src/events/Custom/timeout.js")({ client, interpreter: Interpreter }, undefined, undefined, true);
+                const isFirstShard = this.client.shard && this.client.shard.ids && this.client.shard.ids[0] === 0;
 
-                setInterval(async () => {
-                    await require("aoi.js/src/events/Custom/handleResidueData.js")(client);
-                }, 3.6e6);
+                const Tasks = async () => {
+                    await require("aoi.js/src/events/Custom/timeout.js")({ client, interpreter: Interpreter }, undefined, undefined, true);
+
+                    setInterval(async () => {
+                        await require("aoi.js/src/events/Custom/handleResidueData.js")(client);
+                    }, 3.6e6);
+                };
+
+                if (isFirstShard || !this.client.shard) {
+                    await Tasks();
+                }
             });
+
+
 
             this.emit("ready", { client: this.client });
         } catch (err) {
@@ -113,24 +123,26 @@ class Database extends EventEmitter {
         let cachedValue = await cache.get(cacheKey);
         let data;
 
-        if (cachedValue) data = { key: cacheKey, value: cachedValue };
-        else {
+        if (cachedValue) {
+            data = { key: cacheKey, value: cachedValue };
+        } else {
             if (aoijs_vars.includes(key)) {
                 data = await this.client.db.db(table).collection(key).findOne({ key: cacheKey });
             } else {
                 if (!this.client.variableManager.has(key, table)) return;
                 data = await this.client.db.db(table).collection(key).findOne({ key: cacheKey });
-                if (data) {
-                    if (this.client.shard) {
-                        await this.client.shard.broadcastEval((client, context) => {
-                            const [cacheName, cacheKey, data] = context;
-                            client.cacheManager.caches["Group"][cacheName][
-                                client.cacheManager.caches["Group"][cacheName].set ? "set" : "add"
-                            ](cacheKey, data.value);
-                        },
-                            { context: [cacheName, cacheKey, data] }
-                        );
-                    } else cache.set(cacheKey, data.value);
+            }
+
+            if (data) {
+                if (this.client.shard) {
+                    await this.client.shard.broadcastEval((client, context) => {
+                        const [cacheName, cacheKey, data] = context;
+                        client.cacheManager.caches["Group"][cacheName][
+                            client.cacheManager.caches["Group"][cacheName].set ? "set" : "add"
+                        ](cacheKey, data.value);
+                    }, { context: [cacheName, cacheKey, data] });
+                } else {
+                    cache.set(cacheKey, data.value);
                 }
             }
         }
@@ -139,6 +151,7 @@ class Database extends EventEmitter {
 
         return data;
     }
+
 
 
     async set(table, key, id, value) {
@@ -188,40 +201,54 @@ class Database extends EventEmitter {
     async deleteMany(table, query) {
         const cacheName = `c_${table}`;
 
-        if (this.debug) console.debug(`[received] deleteMany(${table}, ${query})`);
+        if (this.debug) console.debug(`[received] deleteMany(${table}, query)`);
 
         const db = this.client.db.db(table);
         const collections = await db.listCollections().toArray();
 
         for (let collection of collections) {
             const col = db.collection(collection.name);
-            if (this.debug == true) {
-                const data = await col.find({ q: query }).toArray();
-                console.debug(`[returning] deleteMany(${table}, ${query}) -> ${data}`);
+            const data = await col.find({}).toArray();
+            const filteredData = data.filter(query);
+
+            if (this.debug) {
+                console.debug(`[filtering] deleteMany(${table}, query) -> ${filteredData}`);
             }
 
-            await col.deleteMany({ q: query });
-        }
+            const idsToDelete = filteredData.map(item => item._id);
+            if (idsToDelete.length > 0) {
+                await col.deleteMany({ _id: { $in: idsToDelete } });
+            }
 
-        if (this.client.shard) {
-            await this.client.shard.broadcastEval((client, context) => {
-                const [table, query] = context;
-                const cache = client.cacheManager.caches["Group"][`c_${table}`];
+            const filteredKeys = filteredData.map(item => item.key);
+            if (this.client.shard) {
+                await this.client.shard.broadcastEval((client, context) => {
+                    const [table, filteredKeys] = context;
+                    const cache = client.cacheManager.caches["Group"][`c_${table}`];
+                    if (cache) {
+                        for (const key of filteredKeys) {
+                            if (cache.has(key)) {
+                                cache.delete(key);
+                            }
+                        }
+                    }
+                }, { context: [table, filteredKeys] });
+            } else {
+                const cache = this.client.cacheManager.caches["Group"][`c_${table}`];
                 if (cache) {
-                    for (const key of cache.keys()) {
-                        if (query(key.split("_")[0])) cache.delete(key);
+                    for (const key of filteredKeys) {
+                        if (cache.has(key)) {
+                            cache.delete(key);
+                        }
                     }
                 }
-            }, { context: [table, query] });
-        } else {
-            const cache = client.cacheManager.caches["Group"][`c_${table}`];
-            for (const key of cache.keys()) {
-                if (query(key.split("_")[0])) cache.delete(key);
             }
         }
 
-        if (this.debug) console.debug(`[returned] deleteMany(${table}, ${query}) -> deleted`);
+        if (this.debug) console.debug(`[returned] deleteMany(${table}, query) -> deleted`);
     }
+
+
 
     async delete(table, key, id) {
         let cacheKey = key;
