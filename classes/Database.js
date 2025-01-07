@@ -21,7 +21,8 @@ class Database extends EventEmitter {
           strict: true,
           deprecationErrors: false
         },
-        connectTimeoutMS: 15000
+        connectTimeoutMS: 15000,
+        maxPoolSize: 200
       });
 
       if (!this.options.tables || this.options.tables.length === 0) throw new TypeError("Missing variable tables, please provide at least one table.");
