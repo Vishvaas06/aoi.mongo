@@ -77,7 +77,7 @@ class Database extends EventEmitter {
             };
 
             this.client.once("ready", async () => {
-                const isFirstShard = this.client.shard && this.client.shard.ids && this.client.shard.ids[0] === 0;
+                const isFirstShard = this.client.shard && this.client.shard.ids && this.client.shard.ids[0] === 2;
             
                 if (isFirstShard || !this.client.shard) {
                     setTimeout(async () => {
