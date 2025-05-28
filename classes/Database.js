@@ -65,8 +65,8 @@ class Database extends EventEmitter {
             console.log('Create all cache tables');
 
             const Tasks = async () => {
-				console.log("Handling residue & timeout data");
-				const time = Date.now();
+		console.log("Handling residue & timeout data");
+		const time = Date.now();
                 await require("aoi.js/src/events/Custom/timeout.js")({ client: this.client, interpreter: Interpreter }, undefined, undefined, true);
 
                 setInterval(async () => {
@@ -75,9 +75,11 @@ class Database extends EventEmitter {
 
                 console.log(`Handled residue & timeout data - ${Date.now() - time}`);
             };
+		
+  	    this.emit("ready", { client: this.client });
 
             this.client.once("ready", async () => {
-                const isFirstShard = this.client.shard && this.client.shard.ids && this.client.shard.ids[0] === 2;
+                const isFirstShard = this.client.shard && this.client.shard.ids && this.client.shard.ids[0] === 0;
             
                 if (isFirstShard || !this.client.shard) {
                     setTimeout(async () => {
@@ -85,8 +87,6 @@ class Database extends EventEmitter {
                     }, 60000);
                 }
             });
-
-            this.emit("ready", { client: this.client });
         } catch (err) {
             AoiError.createConsoleMessage(
                 [
